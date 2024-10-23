@@ -53,5 +53,6 @@
         <module>tracing</module>
         <module>tutorial</module>
         <module>websocket</module>
+        <module>sse</module>
     </modules>
 </project>

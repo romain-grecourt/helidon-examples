@@ -68,13 +68,15 @@ class ChatService implements HttpService {
     private void events(ServerRequest req, ServerResponse res) {
         String id = req.path().pathParameters().get("id");
         try (SseSink sseSink = res.sink(SseSink.TYPE)) {
-            session(id).poll(message -> {
-                JsonObject jsonObject = JSON_PROVIDER.createObjectBuilder()
-                        .add("user", message.user())
-                        .add("timestamp", message.timestamp().toEpochMilli())
-                        .add("text", message.text())
-                        .build();
-                sseSink.emit(SseEvent.create(jsonObject));
+            session(id).poll(event -> {
+                if (event instanceof ChatRoom.Message message) {
+                    JsonObject jsonObject = JSON_PROVIDER.createObjectBuilder()
+                            .add("user", message.user())
+                            .add("timestamp", message.timestamp().toEpochMilli())
+                            .add("text", message.text())
+                            .build();
+                    sseSink.emit(SseEvent.create(jsonObject));
+                }
             });
         }
     }

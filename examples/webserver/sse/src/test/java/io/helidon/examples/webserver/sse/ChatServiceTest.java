@@ -19,7 +19,6 @@ package io.helidon.examples.webserver.sse;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import io.helidon.http.Status;
@@ -57,14 +56,10 @@ class ChatServiceTest {
         String id = client.post().submit("Joe", String.class).entity();
 
         // events
-        CountDownLatch latch = new CountDownLatch(3);
         CompletableFuture<List<JsonObject>> future = CompletableFuture.supplyAsync(() -> {
             try (var response = client.get(id).header(ACCEPT_EVENT_STREAM).request()) {
                 List<JsonObject> events = new ArrayList<>();
-                response.source(SseSource.TYPE, event -> {
-                    events.add(event.data(JsonObject.class));
-                    latch.countDown();
-                });
+                response.source(SseSource.TYPE, event -> events.add(event.data(JsonObject.class)));
                 return events;
             }
         });
@@ -76,15 +71,12 @@ class ChatServiceTest {
             }
         }
 
-        // wait for 3 events
-        assertThat(latch.await(5, TimeUnit.SECONDS), is(true));
-
         // disconnect
         try (var response = client.delete(id).request()) {
             assertThat(response.status(), is(Status.NO_CONTENT_204));
         }
 
-        List<JsonObject> events = future.get();
+        List<JsonObject> events = future.get(5, TimeUnit.SECONDS);
         assertThat(events.size(), is(3));
         for (int i=0; i < 3; i++) {
             assertThat(events.get(i), is(notNullValue()));

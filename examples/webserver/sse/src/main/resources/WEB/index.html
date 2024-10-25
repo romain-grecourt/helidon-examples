@@ -93,8 +93,8 @@
         $('input').each((i, e) => {
           e.disabled = !e.disabled;
         });
-        this.init(data);
         $('#text').focus();
+        this.initStream(data);
       })
     }
     send(text) {
@@ -109,7 +109,7 @@
         $('#text').val('')
       });
     }
-    init(id) {
+    initStream(id) {
       this.id = id;
       this.eventSource = new EventSource(`/api/${id}`)
       this.eventSource.onmessage = event => {
@@ -126,19 +126,15 @@
       };
     }
     disconnect() {
-      const id = this.id;
-      this.id = null;
       this.eventSource.close();
-      this.eventSource.onmessage = null;
+      $('#events').empty();
+      $('input').each((i, e) => {
+        e.disabled = !e.disabled;
+      });
       $.ajax({
         type: 'DELETE',
-        url: `/api/${id}`
-      }).done(() => {
-        $('#events').empty();
-        $('input').each((i, e) => {
-          e.disabled = !e.disabled;
-        });
-      })
+        url: `/api/${this.id}`
+      });
     }
   }
   $(document).ready(() => {

@@ -39,7 +39,7 @@ class ChatRoom {
 
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final Map<String, Session> sessions = new ConcurrentHashMap<>();
-    private final List<Message> messages = new ArrayList<>();
+    private final List<Event> events = new ArrayList<>();
     private final Lock lock = new ReentrantLock();
 
     /**
@@ -67,25 +67,31 @@ class ChatRoom {
             return new Session(this, id, user);
         });
         // emit all messages
-        messages.forEach(session::put);
+        executor.execute(() -> events.forEach(session::put));
         return session;
     }
 
     /**
-     * Send a message.
+     * Emit an event.
      *
-     * @param message message
+     * @param event event
      */
-    void send(Message message) {
-        // save message
+    void emit(Event event) {
+        // save event
         lock.lock();
         try {
-            messages.add(message);
+            events.add(event);
         } finally {
             lock.unlock();
         }
         // broadcast to all sessions
-        executor.execute(() -> sessions.values().forEach(session -> session.put(message)));
+        sessions.values().forEach(session -> executor.execute(() -> session.put(event)));
+    }
+
+    /**
+     * Event.
+     */
+    sealed interface Event permits Message, SessionClose {
     }
 
     /**
@@ -95,7 +101,7 @@ class ChatRoom {
      * @param timestamp timestamp
      * @param text      text
      */
-    record Message(String user, Instant timestamp, String text) {
+    record Message(String user, Instant timestamp, String text) implements Event {
 
         /**
          * Chat room message.
@@ -109,14 +115,21 @@ class ChatRoom {
     }
 
     /**
+     * Close event.
+     */
+    record SessionClose() implements Event {
+    }
+
+    /**
      * Session (per user).
      */
     static final class Session {
 
         private static final System.Logger LOGGER = System.getLogger(Session.class.getName());
+        private static final Event EOF = new SessionClose();
 
         private final AtomicBoolean active = new AtomicBoolean(true);
-        private final BlockingQueue<Object> queue = new ArrayBlockingQueue<>(128);
+        private final BlockingQueue<Event> queue = new ArrayBlockingQueue<>(128);
         private final ChatRoom room;
         private final String id;
         private final String user;
@@ -142,7 +155,7 @@ class ChatRoom {
          * @param text text
          */
         void send(String text) {
-            room.send(new Message(user, text));
+            room.emit(new Message(user, text));
         }
 
         /**
@@ -151,8 +164,8 @@ class ChatRoom {
         void close() {
             if (active.compareAndSet(true, false)) {
                 room.sessions.remove(id);
-                if (!queue.offer(-1)) {
-                    LOGGER.log(Level.DEBUG, "Unable to add end-of-stream, session: {0}", id);
+                if (!queue.offer(EOF)) {
+                    LOGGER.log(Level.DEBUG, "Unable to add EOF, session: {0}", id);
                 }
             }
         }
@@ -162,21 +175,23 @@ class ChatRoom {
          *
          * @param consumer consumer
          */
-        void poll(Consumer<Message> consumer) {
+        void poll(Consumer<Event> consumer) {
             while (active.get()) {
                 try {
-                    if (queue.take() instanceof Message message) {
-                        consumer.accept(message);
+                    Event event = queue.take();
+                    if (event instanceof SessionClose) {
+                        break;
                     }
+                    consumer.accept(event);
                 } catch (InterruptedException e) {
                     throw new RuntimeException(e);
                 }
             }
         }
 
-        private void put(Message message) {
+        private void put(Event event) {
             try {
-                queue.put(message);
+                queue.put(event);
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }

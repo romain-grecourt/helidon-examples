@@ -58,6 +58,8 @@ jobs:
           distribution: ${{ env.JAVA_DISTRO }}
           java-version: ${{ env.JAVA_VERSION }}
           cache: maven
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
       - name: Helidon Priming build
         run: |
           mkdir -p ~/.m2/repository/io/helidon/
